@@ -1,0 +1,8 @@
+syntax = "proto2";
+
+message Text {
+    required string nickname = 1;
+    required int32 chatroomid = 2;
+    required string content = 3;
+    required int32 msgid = 4;
+}
