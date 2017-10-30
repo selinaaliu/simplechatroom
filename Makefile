@@ -1,4 +1,4 @@
-TARGETS = chatroomserver
+TARGETS = chatroomserver chatroomclient
 
 all: $(TARGETS)
 
@@ -7,6 +7,9 @@ all: $(TARGETS)
 
 chatroomserver: text.pb.o chatroomserver.o
 	g++ $^ -o $@ -lprotobuf -lpthread
+
+chatroomclient: chatroomclient.o
+	g++ $^ -o $@
 
 clean::
 	rm -fv $(TARGETS) *~ *.o

@@ -79,14 +79,14 @@ void handlePeerServer(Address &serverAddr, string msg);
 void handleClientMsg(Address &clientAddr, string msg);
 void forwardToServers(Text &text);
 void localDeliver(Text text);
-void fifoDeliver(Text &text);
+void fifoDeliver(Text text);
 
 void refreshQueue(FifoQueue &fq) {
     while (!fq.queue.empty()) {
         const Text &top = fq.queue.top();
-        if (top.msgid() != fq.lastMsgId) break;
-        fq.lastMsgId++;
+        if (top.msgid() != (fq.lastMsgId+1)) break;
         localDeliver(top);
+        fq.lastMsgId++;
         fq.queue.pop();
     }
 }
@@ -196,6 +196,7 @@ int main(int argc, char *argv[]) {
 
     const char *filename = argv[optind];
     cl.serverId = atoi(argv[optind+1]) - 1;
+    if(debug_mode) debug_msg("server id is: ", cl.serverId);
     populateCluster(filename, cl);
     runServer();
     return 0;
@@ -215,11 +216,15 @@ void populateCluster(const char* filename, Cluster &cl) {
         curr.port = htons(stoi(line.substr(col+1,com-col-1), &sz));
         if (counter != cl.serverId) cl.peers.insert(curr);
         else {
+            if (debug_mode) debug_msg(line.c_str());
             cl.faddr = curr;
             if (com != string::npos) {
                 col= line.find(":", col+1);
                 cl.baddr.addr = inet_addr(line.substr(com+1,col-com-1).c_str());
                 cl.baddr.port = htons(stoi(line.substr(col+1), &sz));
+            } else { 
+                cl.baddr.addr = curr.addr; 
+                cl.baddr.port = curr.port;
             }
         }
         counter++;
@@ -236,7 +241,7 @@ void runServer() {
     servaddr.sin_addr.s_addr = cl.baddr.addr;
     status = ::bind(sockfd, (struct sockaddr*) &servaddr, sizeof(servaddr));
     if (status < 0) { throwSysError("Socket did not bind"); } 
-
+    if (debug_mode) debug_msg("connected to");
     char buffer[120];
     bzero(buffer, sizeof(buffer));
 
@@ -254,6 +259,7 @@ void runServer() {
         
         // from peer server
         if (cl.peers.find(fromAddress) != cl.peers.end()) { 
+            if (debug_mode) debug_msg("received msg from peer server.");
             handlePeerServer(fromAddress, data);
         } 
         // from existing client
@@ -271,6 +277,7 @@ void runServer() {
 void handlePeerServer(Address &serverAddr, string msg) {
     Text text;
     text.ParseFromString(msg);
+    fifoDeliver(text);
 }
 
 void handleExistingClient(Address &clientAddr, string msg) { 
@@ -330,7 +337,7 @@ void handleClientMsg(Address &clientAddr, string msg) {
 
 void localDeliver(Text text) {
     vector<Address> &roomGuests = chatrooms[text.chatroomid()];    
-    string msg = text.content();
+    string msg = "<" + text.nickname() + "> " + text.content();
     int status;
     for (int i = 0; i < roomGuests.size(); i++) {
         struct sockaddr_in curr;
@@ -347,6 +354,7 @@ void localDeliver(Text text) {
 }
 
 void forwardToServers(Text &text) {
+    if (debug_mode) debug_msg("Forwarding msg from local client to other servers.");
     string payload;
     text.SerializeToString(&payload);
     int status;
@@ -361,10 +369,11 @@ void forwardToServers(Text &text) {
         if (status < 0 && debug_mode) {
             debug_msg("Error forwarding packet to other servers");
         }
+        debug_msg("Forwarded msg to server port", peer.port);
     }
 }
 
-void fifoDeliver(Text &text) {
+void fifoDeliver(Text text) {
     string queueId = text.nickname() + to_string(text.chatroomid());
     FifoQueue &fq = fifoQueueMap[queueId];
     int prev = fq.lastMsgId;
